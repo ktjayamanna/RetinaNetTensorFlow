@@ -1,8 +1,8 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Tue Sep 13 08:47:43 2022
-@Reference: https://keras.io/examples/vision/retinanet/
+@Reference: 
+    https://keras.io/examples/vision/retinanet/
+    https://www.youtube.com/watch?v=6fXBXNjd1JQ
 @author: kjayamanna
 """
 
