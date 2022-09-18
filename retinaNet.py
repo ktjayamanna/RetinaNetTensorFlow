@@ -8,7 +8,6 @@ Created on Tue Sep 13 08:32:20 2022
 """
 
 import os
-import re
 import zipfile
 
 import numpy as np
@@ -16,9 +15,10 @@ import tensorflow as tf
 from tensorflow import keras
 
 import matplotlib.pyplot as plt
-import tensorflow_datasets as tfds
+from FeaturePyramids import FeaturePyramid
+from FeaturePyramids import build_head
 
-#%%
+#%
 url = "https://github.com/srihari-humbarwadi/datasets/releases/download/v0.1.0/data.zip"
 filename = os.path.join(os.getcwd(), "data.zip")
 keras.utils.get_file(filename, url)
@@ -26,7 +26,7 @@ keras.utils.get_file(filename, url)
 
 with zipfile.ZipFile("data.zip", "r") as z_fp:
     z_fp.extractall("./")
-#%%
+#%
 def swap_xy(boxes):
     """Swaps order the of x and y coordinates of the boxes.
 
@@ -37,7 +37,7 @@ def swap_xy(boxes):
       swapped boxes with shape same as that of boxes.
     """
     return tf.stack([boxes[:, 1], boxes[:, 0], boxes[:, 3], boxes[:, 2]], axis=-1)
-#%%
+#%
 def convert_to_xywh(boxes):
     """Changes the box format to center, width and height.
 
@@ -53,7 +53,7 @@ def convert_to_xywh(boxes):
         [(boxes[..., :2] + boxes[..., 2:]) / 2.0, boxes[..., 2:] - boxes[..., :2]],
         axis=-1,
     )
-#%%
+#%
 def convert_to_corners(boxes):
     """Changes the box format to corner coordinates
 
@@ -69,7 +69,7 @@ def convert_to_corners(boxes):
         [boxes[..., :2] - boxes[..., 2:] / 2.0, boxes[..., :2] + boxes[..., 2:] / 2.0],
         axis=-1,
     )
-#%%
+#%
 def compute_iou(boxes1, boxes2):
     """Computes pairwise IOU matrix for given two sets of boxes
 
@@ -96,7 +96,7 @@ def compute_iou(boxes1, boxes2):
         boxes1_area[:, None] + boxes2_area - intersection_area, 1e-8
     )
     return tf.clip_by_value(intersection_area / union_area, 0.0, 1.0)
-#%%
+#%
 def visualize_detections(
     image, boxes, classes, scores, figsize=(7, 7), linewidth=1, color=[0, 0, 1]
 ):
@@ -124,4 +124,35 @@ def visualize_detections(
         )
     plt.show()
     return ax
-#%%
+#%
+class RetinaNet(keras.Model):
+    """A subclassed Keras model implementing the RetinaNet architecture.
+
+    Attributes:
+      num_classes: Number of classes in the dataset.
+      backbone: The backbone to build the feature pyramid from.
+        Currently supports ResNet50 only.
+    """
+
+    def __init__(self, num_classes, backbone=None, **kwargs):
+        super(RetinaNet, self).__init__(name="RetinaNet", **kwargs)
+        self.fpn = FeaturePyramid(backbone)
+        self.num_classes = num_classes
+
+        prior_probability = tf.constant_initializer(-np.log((1 - 0.01) / 0.01))
+        self.cls_head = build_head(9 * num_classes, prior_probability)
+        self.box_head = build_head(9 * 4, "zeros")
+
+    def call(self, image, training=False):
+        features = self.fpn(image, training=training)
+        N = tf.shape(image)[0]
+        cls_outputs = []
+        box_outputs = []
+        for feature in features:
+            box_outputs.append(tf.reshape(self.box_head(feature), [N, -1, 4]))
+            cls_outputs.append(
+                tf.reshape(self.cls_head(feature), [N, -1, self.num_classes])
+            )
+        cls_outputs = tf.concat(cls_outputs, axis=1)
+        box_outputs = tf.concat(box_outputs, axis=1)
+        return tf.concat([box_outputs, cls_outputs], axis=-1)
